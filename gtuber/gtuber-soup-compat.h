@@ -23,15 +23,22 @@
 #include <gio/gio.h>
 #include <libsoup/soup.h>
 
+G_BEGIN_DECLS
+
 #if !SOUP_CHECK_VERSION (2, 99, 1)
 
-G_BEGIN_DECLS
+SoupStatus soup_message_get_status (SoupMessage *msg);
 
 SoupMessageHeaders * soup_message_get_request_headers (SoupMessage *msg);
 
+SoupMessageHeaders * soup_message_get_response_headers (SoupMessage *msg);
+
 void soup_message_set_request_body (SoupMessage *msg, const char *content_type, GInputStream *stream, gssize content_length);
+
+#endif /* SOUP_CHECK_VERSION */
+
+GUri * gtuber_soup_message_obtain_uri (SoupMessage *msg);
 
 G_END_DECLS
 
-#endif /* SOUP_CHECK_VERSION */
 #endif /* __GTUBER_SOUP_COMPAT_H__ */

@@ -38,6 +38,7 @@ enum
   PROP_URI,
   PROP_ITAG,
   PROP_MIME_TYPE,
+  PROP_CODEC_FLAGS,
   PROP_VIDEO_CODEC,
   PROP_AUDIO_CODEC,
   PROP_WIDTH,
@@ -93,6 +94,10 @@ gtuber_stream_class_init (GtuberStreamClass *klass)
       "Stream MIME Type", "The MIME type of the stream", GTUBER_TYPE_STREAM_MIME_TYPE,
       GTUBER_STREAM_MIME_TYPE_UNKNOWN, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
+  param_specs[PROP_CODEC_FLAGS] = g_param_spec_flags ("codec-flags",
+      "Codec Flags", "Flags indicating which codecs were detected in stream",
+      GTUBER_TYPE_CODEC_FLAGS, 0, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
   param_specs[PROP_VIDEO_CODEC] = g_param_spec_string ("video-codec",
       "Video Codec", "The stream video codec", NULL,
       G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
@@ -136,6 +141,9 @@ gtuber_stream_get_property (GObject *object, guint prop_id,
     case PROP_MIME_TYPE:
       g_value_set_enum (value, gtuber_stream_get_mime_type (self));
       break;
+    case PROP_CODEC_FLAGS:
+      g_value_set_flags (value, gtuber_stream_get_codec_flags (self));
+      break;
     case PROP_VIDEO_CODEC:
       g_value_set_string (value, gtuber_stream_get_video_codec (self));
       break;
@@ -176,7 +184,7 @@ gtuber_stream_finalize (GObject *object)
 }
 
 /**
- * gtuber_stream_new: (skip)
+ * gtuber_stream_new:
  *
  * Creates a new #GtuberStream instance.
  *
@@ -195,7 +203,7 @@ gtuber_stream_new (void)
  * @stream: a #GtuberStream
  *
  * Returns: (transfer none): URI of the stream.
- **/
+ */
 const gchar *
 gtuber_stream_get_uri (GtuberStream *self)
 {
@@ -205,14 +213,14 @@ gtuber_stream_get_uri (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_uri: (skip)
+ * gtuber_stream_set_uri:
  * @stream: a #GtuberStream
  * @uri: an URI
  *
  * Sets the stream URI.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_uri (GtuberStream *self, const gchar *uri)
 {
@@ -227,7 +235,7 @@ gtuber_stream_set_uri (GtuberStream *self, const gchar *uri)
  * @stream: a #GtuberStream
  *
  * Returns: itag of the stream or 0 when undetermined.
- **/
+ */
 guint
 gtuber_stream_get_itag (GtuberStream *self)
 {
@@ -237,14 +245,14 @@ gtuber_stream_get_itag (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_itag: (skip)
+ * gtuber_stream_set_itag:
  * @stream: a #GtuberStream
  * @itag: an itag
  *
  * Sets the stream itag. Used to identify stream among others.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_itag (GtuberStream *self, guint itag)
 {
@@ -259,7 +267,7 @@ gtuber_stream_set_itag (GtuberStream *self, guint itag)
  *
  * Returns: a #GtuberStreamMimeType representing
  *   MIME type of the stream.
- **/
+ */
 GtuberStreamMimeType
 gtuber_stream_get_mime_type (GtuberStream *self)
 {
@@ -269,14 +277,14 @@ gtuber_stream_get_mime_type (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_mime_type: (skip)
+ * gtuber_stream_set_mime_type:
  * @stream: a #GtuberStream
  * @mime_type: a #GtuberStreamMimeType
  *
  * Sets the stream MIME type.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_mime_type (GtuberStream *self, GtuberStreamMimeType mime_type)
 {
@@ -286,30 +294,46 @@ gtuber_stream_set_mime_type (GtuberStream *self, GtuberStreamMimeType mime_type)
 }
 
 /**
- * gtuber_stream_get_codecs:
+ * gtuber_stream_get_codec_flags:
  * @stream: a #GtuberStream
- * @vcodec: (out) (optional) (transfer none): the stream video codec
- * @acodec: (out) (optional) (transfer none): the stream audio codec
  *
- * Gets the video and audio codecs used to encode the stream.
+ * Get flags indicating which codecs were detected in stream.
  *
- * Returns: %TRUE if successful, with the out parameters set, %FALSE otherwise.
- **/
-gboolean
-gtuber_stream_get_codecs (GtuberStream *self,
-    const gchar **vcodec, const gchar **acodec)
+ * Returns: #GtuberCodecFlags flags
+ */
+GtuberCodecFlags
+gtuber_stream_get_codec_flags (GtuberStream *self)
 {
-  g_return_val_if_fail (GTUBER_IS_STREAM (self), FALSE);
+  const gchar *vcodec, *acodec;
+  GtuberCodecFlags flags = 0;
 
-  if (!self->vcodec && !self->acodec)
-    return FALSE;
+  g_return_val_if_fail (GTUBER_IS_STREAM (self), flags);
 
-  if (vcodec)
-    *vcodec = self->vcodec;
-  if (acodec)
-    *acodec = self->acodec;
+  vcodec = gtuber_stream_get_video_codec (self);
+  if (vcodec) {
+    if (g_str_has_prefix (vcodec, "avc"))
+      flags |= GTUBER_CODEC_AVC;
+    else if (g_str_has_prefix (vcodec, "vp9"))
+      flags |= GTUBER_CODEC_VP9;
+    else if (g_str_has_prefix (vcodec, "hev"))
+      flags |= GTUBER_CODEC_HEVC;
+    else if (g_str_has_prefix (vcodec, "av01"))
+      flags |= GTUBER_CODEC_AV1;
+    else
+      flags |= GTUBER_CODEC_UNKNOWN_VIDEO;
+  }
 
-  return TRUE;
+  acodec = gtuber_stream_get_audio_codec (self);
+  if (acodec) {
+    if (g_str_has_prefix (acodec, "mp4a"))
+      flags |= GTUBER_CODEC_MP4A;
+    else if (g_str_has_prefix (acodec, "opus"))
+      flags |= GTUBER_CODEC_OPUS;
+    else
+      flags |= GTUBER_CODEC_UNKNOWN_AUDIO;
+  }
+
+  return flags;
 }
 
 /**
@@ -320,34 +344,35 @@ gtuber_stream_get_codecs (GtuberStream *self,
  * Multiple codecs will be separated by commas.
  *
  * Returns: (transfer full): codecs string or %NULL when none.
- **/
+ */
 gchar *
 gtuber_stream_obtain_codecs_string (GtuberStream *self)
 {
   const gchar *vcodec, *acodec;
-  gchar *codecs_str = NULL;
+  gchar *codecs_str;
 
   g_return_val_if_fail (GTUBER_IS_STREAM (self), NULL);
 
-  if (gtuber_stream_get_codecs (self, &vcodec, &acodec)) {
-    codecs_str = (vcodec && acodec)
-        ? g_strdup_printf ("%s,%s", vcodec, acodec)
-        : (vcodec)
-        ? g_strdup (vcodec)
-        : g_strdup (acodec);
-  }
+  vcodec = gtuber_stream_get_video_codec (self);
+  acodec = gtuber_stream_get_audio_codec (self);
+
+  codecs_str = (vcodec && acodec)
+      ? g_strdup_printf ("%s,%s", vcodec, acodec)
+      : (vcodec)
+      ? g_strdup (vcodec)
+      : g_strdup (acodec);
 
   return codecs_str;
 }
 
 /**
- * gtuber_stream_set_codecs: (skip)
+ * gtuber_stream_set_codecs:
  * @stream: a #GtuberStream
  * @vcodec: the stream video codec
  * @acodec: the stream audio codec
  *
  * Sets the video and audio codecs used to encode the stream.
- **/
+ */
 void
 gtuber_stream_set_codecs (GtuberStream *self,
     const gchar *vcodec, const gchar *acodec)
@@ -366,7 +391,7 @@ gtuber_stream_set_codecs (GtuberStream *self,
  * @stream: a #GtuberStream
  *
  * Returns: (transfer none): the stream video codec.
- **/
+ */
 const gchar *
 gtuber_stream_get_video_codec (GtuberStream *self)
 {
@@ -376,14 +401,14 @@ gtuber_stream_get_video_codec (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_video_codec: (skip)
+ * gtuber_stream_set_video_codec:
  * @stream: a #GtuberStream
  * @vcodec: the stream video codec
  *
  * Sets the video codec used to encode the stream.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_video_codec (GtuberStream *self, const gchar *vcodec)
 {
@@ -398,7 +423,7 @@ gtuber_stream_set_video_codec (GtuberStream *self, const gchar *vcodec)
  * @stream: a #GtuberStream
  *
  * Returns: (transfer none): the stream audio codec.
- **/
+ */
 const gchar *
 gtuber_stream_get_audio_codec (GtuberStream *self)
 {
@@ -408,14 +433,14 @@ gtuber_stream_get_audio_codec (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_audio_codec: (skip)
+ * gtuber_stream_set_audio_codec:
  * @stream: a #GtuberStream
  * @acodec: the stream audio codec
  *
  * Sets the audio codec used to encode the stream.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_audio_codec (GtuberStream *self, const gchar *acodec)
 {
@@ -430,7 +455,7 @@ gtuber_stream_set_audio_codec (GtuberStream *self, const gchar *acodec)
  * @stream: a #GtuberStream
  *
  * Returns: width of video or 0 when undetermined.
- **/
+ */
 guint
 gtuber_stream_get_width (GtuberStream *self)
 {
@@ -440,14 +465,14 @@ gtuber_stream_get_width (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_width: (skip)
+ * gtuber_stream_set_width:
  * @stream: a #GtuberStream
  * @width: video width
  *
  * Sets the video stream width.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_width (GtuberStream *self, guint width)
 {
@@ -461,7 +486,7 @@ gtuber_stream_set_width (GtuberStream *self, guint width)
  * @stream: a #GtuberStream
  *
  * Returns: height of video or 0 when undetermined.
- **/
+ */
 guint
 gtuber_stream_get_height (GtuberStream *self)
 {
@@ -471,14 +496,14 @@ gtuber_stream_get_height (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_height: (skip)
+ * gtuber_stream_set_height:
  * @stream: a #GtuberStream
  * @height: video height
  *
  * Sets the video stream height.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_height (GtuberStream *self, guint height)
 {
@@ -492,7 +517,7 @@ gtuber_stream_set_height (GtuberStream *self, guint height)
  * @stream: a #GtuberStream
  *
  * Returns: framerate of video or 0 when undetermined.
- **/
+ */
 guint
 gtuber_stream_get_fps (GtuberStream *self)
 {
@@ -502,14 +527,14 @@ gtuber_stream_get_fps (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_fps: (skip)
+ * gtuber_stream_set_fps:
  * @stream: a #GtuberStream
  * @fps: video framerate
  *
  * Sets the video stream framerate.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_fps (GtuberStream *self, guint fps)
 {
@@ -523,7 +548,7 @@ gtuber_stream_set_fps (GtuberStream *self, guint fps)
  * @stream: a #GtuberStream
  *
  * Returns: bitrate of stream or 0 when undetermined.
- **/
+ */
 guint
 gtuber_stream_get_bitrate (GtuberStream *self)
 {
@@ -533,14 +558,14 @@ gtuber_stream_get_bitrate (GtuberStream *self)
 }
 
 /**
- * gtuber_stream_set_bitrate: (skip)
+ * gtuber_stream_set_bitrate:
  * @stream: a #GtuberStream
  * @bitrate: bitrate
  *
  * Sets the stream bitrate.
  *
  * This is mainly useful for plugin development.
- **/
+ */
 void
 gtuber_stream_set_bitrate (GtuberStream *self, guint bitrate)
 {

@@ -21,14 +21,14 @@
 #define __GTUBER_TYPES_H__
 
 #if !defined(__GTUBER_INSIDE__) && !defined(GTUBER_COMPILATION)
-#error "Only <gtuber/gtuber.h> can be included directly."
+#error "Only <gtuber/gtuber.h> and <gtuber/gtuber-plugin-devel.h> can be included directly."
 #endif
 
 #include <glib.h>
 
 G_BEGIN_DECLS
 
-typedef void (*GtuberFunc) (gpointer srca, gpointer data, gpointer user_data);
+typedef void (*GtuberFunc) (gpointer src, gpointer data, gpointer user_data);
 
 G_END_DECLS
 

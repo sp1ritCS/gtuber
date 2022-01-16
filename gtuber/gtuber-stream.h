@@ -21,7 +21,7 @@
 #define __GTUBER_STREAM_H__
 
 #if !defined(__GTUBER_INSIDE__) && !defined(GTUBER_COMPILATION)
-#error "Only <gtuber/gtuber.h> can be included directly."
+#error "Only <gtuber/gtuber.h> and <gtuber/gtuber-plugin-devel.h> can be included directly."
 #endif
 
 #include <glib.h>
@@ -58,7 +58,7 @@ guint                gtuber_stream_get_itag             (GtuberStream *stream);
 
 GtuberStreamMimeType gtuber_stream_get_mime_type        (GtuberStream *stream);
 
-gboolean             gtuber_stream_get_codecs           (GtuberStream *stream, const gchar **vcodec, const gchar **acodec);
+GtuberCodecFlags     gtuber_stream_get_codec_flags      (GtuberStream *stream);
 
 gchar *              gtuber_stream_obtain_codecs_string (GtuberStream *stream);
 

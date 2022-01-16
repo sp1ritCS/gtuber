@@ -31,17 +31,21 @@ G_DEFINE_QUARK (gtuberwebsite-error-quark, gtuber_website_error)
 
 static void gtuber_website_finalize (GObject *object);
 
+static void gtuber_website_prepare (GtuberWebsite *website);
 static GtuberFlow gtuber_website_create_request (GtuberWebsite *self,
     GtuberMediaInfo *info, SoupMessage **msg, GError **error);
-static GtuberFlow gtuber_website_parse_response (GtuberWebsite *website,
+static GtuberFlow gtuber_website_read_response (GtuberWebsite *self,
+    SoupMessage *msg, GError **error);
+static GtuberFlow gtuber_website_parse_data (GtuberWebsite *self,
     gchar *data, GtuberMediaInfo *info, GError **error);
-static GtuberFlow gtuber_website_parse_input_stream (GtuberWebsite *website,
+static GtuberFlow gtuber_website_parse_input_stream (GtuberWebsite *self,
     GInputStream *stream, GtuberMediaInfo *info, GError **error);
+static GtuberFlow gtuber_website_set_user_req_headers (GtuberWebsite *self,
+    SoupMessageHeaders *req_headers, GHashTable *user_headers, GError **error);
 
 static void
 gtuber_website_init (GtuberWebsite *self)
 {
-  self->uri = NULL;
 }
 
 static void
@@ -53,9 +57,12 @@ gtuber_website_class_init (GtuberWebsiteClass *klass)
   gobject_class->finalize = gtuber_website_finalize;
 
   website_class->handles_input_stream = FALSE;
+  website_class->prepare = gtuber_website_prepare;
   website_class->create_request = gtuber_website_create_request;
-  website_class->parse_response = gtuber_website_parse_response;
+  website_class->read_response = gtuber_website_read_response;
+  website_class->parse_data = gtuber_website_parse_data;
   website_class->parse_input_stream = gtuber_website_parse_input_stream;
+  website_class->set_user_req_headers = gtuber_website_set_user_req_headers;
 }
 
 static void
@@ -70,6 +77,11 @@ gtuber_website_finalize (GObject *object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
+static void
+gtuber_website_prepare (GtuberWebsite *website)
+{
+}
+
 static GtuberFlow
 gtuber_website_create_request (GtuberWebsite *self,
     GtuberMediaInfo *info, SoupMessage **msg, GError **error)
@@ -78,21 +90,58 @@ gtuber_website_create_request (GtuberWebsite *self,
 }
 
 static GtuberFlow
-gtuber_website_parse_response (GtuberWebsite *website,
+gtuber_website_read_response (GtuberWebsite *self,
+    SoupMessage *msg, GError **error)
+{
+  return (*error == NULL) ? GTUBER_FLOW_OK : GTUBER_FLOW_ERROR;
+}
+
+static GtuberFlow
+gtuber_website_parse_data (GtuberWebsite *self,
     gchar *data, GtuberMediaInfo *info, GError **error)
 {
   return (*error == NULL) ? GTUBER_FLOW_OK : GTUBER_FLOW_ERROR;
 }
 
 static GtuberFlow
-gtuber_website_parse_input_stream (GtuberWebsite *website,
+gtuber_website_parse_input_stream (GtuberWebsite *self,
     GInputStream *stream, GtuberMediaInfo *info, GError **error)
 {
   return (*error == NULL) ? GTUBER_FLOW_OK : GTUBER_FLOW_ERROR;
 }
 
+static void
+insert_user_header (const gchar *name, const gchar *value, GHashTable *user_headers)
+{
+  gboolean addition;
+
+  if (G_UNLIKELY (name == NULL)
+      || !strcmp (name, "Accept-Encoding")
+      || !strcmp (name, "Connection")
+      || !strcmp (name, "Content-Length")
+      || !strcmp (name, "Content-Type")
+      || !strcmp (name, "Host"))
+    return;
+
+  addition = g_hash_table_insert (user_headers, g_strdup (name), g_strdup (value));
+  g_debug ("%s user request header, %s: %s", addition ? "Inserted" : "Replaced", name, value);
+}
+
+static GtuberFlow
+gtuber_website_set_user_req_headers (GtuberWebsite *self,
+    SoupMessageHeaders *req_headers, GHashTable *user_headers, GError **error)
+{
+  if (*error)
+    return GTUBER_FLOW_ERROR;
+
+  soup_message_headers_foreach (req_headers,
+      (SoupMessageHeadersForeachFunc) insert_user_header, user_headers);
+
+  return GTUBER_FLOW_OK;
+}
+
 /**
- * gtuber_website_get_uri: (skip)
+ * gtuber_website_get_uri:
  * @website: a #GtuberWebsite
  *
  * Returns: (transfer none): current requested URI.
@@ -106,7 +155,7 @@ gtuber_website_get_uri (GtuberWebsite *self)
 }
 
 /**
- * gtuber_website_set_uri: (skip)
+ * gtuber_website_set_uri:
  * @website: a #GtuberWebsite
  * @uri: requested URI
  *

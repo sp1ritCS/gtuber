@@ -17,15 +17,22 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#pragma once
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
-#include "gtuber/gtuber-plugin-devel.h"
+#include "gstgtuberelement.h"
 
-G_BEGIN_DECLS
+GST_DEBUG_CATEGORY_STATIC (gst_gtuber_debug);
+#define GST_CAT_DEFAULT gst_gtuber_debug
 
-#define GTUBER_TYPE_PIPED (gtuber_piped_get_type ())
-G_DECLARE_FINAL_TYPE (GtuberPiped, gtuber_piped, GTUBER, PIPED, GtuberWebsite)
+void
+gst_gtuber_element_init (GstPlugin *plugin)
+{
+  static gsize res = FALSE;
 
-G_MODULE_EXPORT GtuberWebsite *query_plugin (GUri *uri);
-
-G_END_DECLS
+  if (g_once_init_enter (&res)) {
+    GST_DEBUG_CATEGORY_INIT (gst_gtuber_debug, "gtuber", 0, "Gtuber elements");
+    g_once_init_leave (&res, TRUE);
+  }
+}

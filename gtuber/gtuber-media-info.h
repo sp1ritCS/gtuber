@@ -21,7 +21,7 @@
 #define __GTUBER_MEDIA_INFO_H__
 
 #if !defined(__GTUBER_INSIDE__) && !defined(GTUBER_COMPILATION)
-#error "Only <gtuber/gtuber.h> can be included directly."
+#error "Only <gtuber/gtuber.h> and <gtuber/gtuber-plugin-devel.h> can be included directly."
 #endif
 
 #include <glib.h>
@@ -48,23 +48,27 @@ typedef struct _GtuberMediaInfoClass GtuberMediaInfoClass;
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (GtuberMediaInfo, g_object_unref)
 #endif
 
-GType gtuber_media_info_get_type                               (void);
+GType gtuber_media_info_get_type                                (void);
 
-const gchar *     gtuber_media_info_get_id                     (GtuberMediaInfo *info);
+const gchar *      gtuber_media_info_get_id                     (GtuberMediaInfo *info);
 
-const gchar *     gtuber_media_info_get_title                  (GtuberMediaInfo *info);
+const gchar *      gtuber_media_info_get_title                  (GtuberMediaInfo *info);
 
-const gchar *     gtuber_media_info_get_description            (GtuberMediaInfo *info);
+const gchar *      gtuber_media_info_get_description            (GtuberMediaInfo *info);
 
-guint             gtuber_media_info_get_duration               (GtuberMediaInfo *info);
+guint              gtuber_media_info_get_duration               (GtuberMediaInfo *info);
 
-gboolean          gtuber_media_info_get_has_streams            (GtuberMediaInfo *info);
+GHashTable *       gtuber_media_info_get_chapters               (GtuberMediaInfo *info);
 
-const GPtrArray * gtuber_media_info_get_streams                (GtuberMediaInfo *info);
+gboolean           gtuber_media_info_get_has_streams            (GtuberMediaInfo *info);
 
-gboolean          gtuber_media_info_get_has_adaptive_streams   (GtuberMediaInfo *info);
+GPtrArray *        gtuber_media_info_get_streams                (GtuberMediaInfo *info);
 
-const GPtrArray * gtuber_media_info_get_adaptive_streams       (GtuberMediaInfo *info);
+gboolean           gtuber_media_info_get_has_adaptive_streams   (GtuberMediaInfo *info);
+
+GPtrArray *        gtuber_media_info_get_adaptive_streams       (GtuberMediaInfo *info);
+
+GHashTable *       gtuber_media_info_get_request_headers        (GtuberMediaInfo *info);
 
 G_END_DECLS
 

@@ -17,18 +17,23 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GTUBER_TWITCH_H__
-#define __GTUBER_TWITCH_H__
+#ifndef __GTUBER_CACHE_PRIVATE_H__
+#define __GTUBER_CACHE_PRIVATE_H__
 
-#include "gtuber/gtuber-plugin-devel.h"
+#include <glib.h>
+#include <gio/gio.h>
 
 G_BEGIN_DECLS
 
-#define GTUBER_TYPE_TWITCH (gtuber_twitch_get_type ())
-G_DECLARE_FINAL_TYPE (GtuberTwitch, gtuber_twitch, GTUBER, TWITCH, GtuberWebsite)
+G_GNUC_INTERNAL
+void gtuber_cache_init (GCancellable *cancellable, GError **error);
 
-G_MODULE_EXPORT GtuberWebsite *query_plugin (GUri *uri);
+G_GNUC_INTERNAL
+GPtrArray * gtuber_cache_find_plugins_for_uri (GUri *guri);
+
+G_GNUC_INTERNAL
+const gchar *const * gtuber_cache_get_supported_schemes (void);
 
 G_END_DECLS
 
-#endif /* __GTUBER_TWITCH_H__ */
+#endif /* __GTUBER_CACHE_PRIVATE_H__ */

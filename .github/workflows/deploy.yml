@@ -60,7 +60,8 @@ jobs:
           SSH_AUTH_SOCK: /tmp/ssh_agent.sock
       - name: Add & commit updated crate 📦
         run: |
-          COMMIT=$(git rev-parse --short HEAD)
+          git fetch --unshallow
+          COMMIT=$(git log --pretty=format:'%h %ce' | awk '{if ($2 != "sp1ritCS@protonmail.com") print $1 }' | head -n1)
           pushd bindings/rust/gtuber-rs/
           git add .
           git commit -m "Updated gtuber-rs for gtuber@$COMMIT" && git push origin master || echo "No changes to commit"

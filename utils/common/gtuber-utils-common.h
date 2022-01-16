@@ -27,13 +27,19 @@
 
 G_BEGIN_DECLS
 
-gboolean             gtuber_utils_common_uri_matches_hosts              (GUri *uri, guint *match, const gchar *search_host, ...) G_GNUC_NULL_TERMINATED;
+gboolean             gtuber_utils_common_uri_matches_hosts              (GUri *uri, gint *match, const gchar *search_host, ...) G_GNUC_NULL_TERMINATED;
 
-gchar *              gtuber_utils_common_obtain_uri_id_from_paths       (GUri *uri, guint *match, const gchar *search_path1, ...) G_GNUC_NULL_TERMINATED;
+gboolean             gtuber_utils_common_uri_matches_hosts_array        (GUri *uri, gint *match, const gchar *const *hosts);
+
+gchar *              gtuber_utils_common_obtain_uri_id_from_paths       (GUri *uri, gint *match, const gchar *search_path1, ...) G_GNUC_NULL_TERMINATED;
 
 gchar *              gtuber_utils_common_obtain_uri_query_value         (GUri *uri, const gchar *key);
 
 gchar *              gtuber_utils_common_obtain_uri_with_query_as_path  (const gchar *uri_str);
+
+gchar *              gtuber_utils_common_obtain_uri_source              (GUri *uri);
+
+gchar *              gtuber_utils_common_replace_uri_source             (const gchar *uri_str, const gchar *src_uri_str);
 
 void                 gtuber_utils_common_msg_take_request               (SoupMessage *msg, const gchar *content_type, gchar *req_body);
 

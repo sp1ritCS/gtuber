@@ -20,8 +20,8 @@
 #ifndef __GTUBER_MEDIA_INFO_DEVEL_H__
 #define __GTUBER_MEDIA_INFO_DEVEL_H__
 
-#if !defined(__GTUBER_PLUGIN_DEVEL_INSIDE__) && !defined(GTUBER_COMPILATION)
-#error "Only "gtuber/gtuber-plugin-devel.h" can be included directly."
+#if !defined(__GTUBER_INSIDE__) && !defined(GTUBER_COMPILATION)
+#error "Only <gtuber/gtuber.h> and <gtuber/gtuber-plugin-devel.h> can be included directly."
 #endif
 
 #include <gtuber/gtuber-media-info.h>
@@ -37,6 +37,8 @@ void              gtuber_media_info_set_title               (GtuberMediaInfo *in
 void              gtuber_media_info_set_description         (GtuberMediaInfo *info, const gchar *description);
 
 void              gtuber_media_info_set_duration            (GtuberMediaInfo *info, guint duration);
+
+void              gtuber_media_info_insert_chapter          (GtuberMediaInfo *info, guint64 start, const gchar *name);
 
 void              gtuber_media_info_add_stream              (GtuberMediaInfo *info, GtuberStream *stream);
 

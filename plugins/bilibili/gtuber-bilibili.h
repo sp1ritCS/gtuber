@@ -19,9 +19,8 @@
 
 #pragma once
 
+#include <gtuber/gtuber-plugin-devel.h>
 #include <json-glib/json-glib.h>
-
-#include "gtuber/gtuber-plugin-devel.h"
 
 G_BEGIN_DECLS
 
@@ -34,8 +33,7 @@ typedef enum
   BILIBILI_BANGUMI_SS,
 } BilibiliType;
 
-#define GTUBER_TYPE_BILIBILI (gtuber_bilibili_get_type ())
-G_DECLARE_FINAL_TYPE (GtuberBilibili, gtuber_bilibili, GTUBER, BILIBILI, GtuberWebsite)
+GTUBER_WEBSITE_PLUGIN_DECLARE (Bilibili, bilibili, BILIBILI)
 
 struct _GtuberBilibili
 {
@@ -54,13 +52,6 @@ struct _GtuberBilibili
   gboolean had_info;
 };
 
-struct _GtuberBilibiliClass
-{
-  GtuberWebsiteClass parent_class;
-};
-
-G_MODULE_EXPORT GtuberWebsite *query_plugin (GUri *uri);
-
 GtuberFlow bilibili_get_flow_from_plugin_props (GtuberBilibili *self, GError **error);
 
 gchar * bilibili_normal_obtain_info_uri (GtuberBilibili *self, const gchar *id_name);
@@ -71,5 +62,7 @@ gchar * bilibili_bangumi_obtain_media_uri (GtuberBilibili *self, const gchar *id
 
 GtuberFlow bilibili_normal_parse_info (GtuberBilibili *self, JsonReader *reader, GtuberMediaInfo *info, GError **error);
 GtuberFlow bilibili_bangumi_parse_info (GtuberBilibili *self, JsonReader *reader, GtuberMediaInfo *info, GError **error);
+
+void bilibili_set_media_info_id_from_cid (GtuberBilibili *self, GtuberMediaInfo *info);
 
 G_END_DECLS

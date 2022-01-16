@@ -18,15 +18,30 @@
  */
 
 #include <math.h>
+#include <gtuber/gtuber-plugin-devel.h>
 
 #include "gtuber-utils-common.h"
-#include "gtuber/gtuber-plugin-devel.h"
+#include "gtuber/gtuber-soup-compat.h"
+
+static const gchar *
+get_parsed_host (const gchar *host)
+{
+  guint offset = 0;
+
+  /* Skip common prefixes */
+  if (g_str_has_prefix (host, "www."))
+    offset = 4;
+  else if (g_str_has_prefix (host, "m."))
+    offset = 2;
+
+  return host + offset;
+}
 
 /**
  * gtuber_utils_common_uri_matches_hosts:
  * @uri: a #GUri
- * @match: (out) (optional): number of host that matched
- *   or zero when match not found
+ * @match: (out) (optional): index of host that matched
+ *   or -1 when match was not found
  * @search_host: possible supported host name
  * @...: arguments, as per @search_host
  *
@@ -36,36 +51,57 @@
  * Returns: %TRUE if host was matched, %FALSE otherwise.
  */
 gboolean
-gtuber_utils_common_uri_matches_hosts (GUri *uri, guint *match, const gchar *search_host, ...)
+gtuber_utils_common_uri_matches_hosts (GUri *uri, gint *match, const gchar *search_host, ...)
 {
   va_list args;
-  guint offset = 0;
-  guint iter_count = 0;
+  guint index = 0;
   gboolean found = FALSE;
-  const gchar *host = g_uri_get_host (uri);
+  const gchar *host;
 
-  if (!host)
-    return FALSE;
+  host = g_uri_get_host (uri);
+  if (host) {
+    const gchar *parsed_host;
 
-  /* Skip common prefixes */
-  if (g_str_has_prefix (host, "www."))
-    offset = 4;
-  else if (g_str_has_prefix (host, "m."))
-    offset = 2;
+    parsed_host = get_parsed_host (host);
 
-  va_start (args, search_host);
-  while (search_host) {
-    iter_count++;
-    if (!strcmp (host + offset, search_host)) {
-      found = TRUE;
-      break;
+    va_start (args, search_host);
+    while (search_host) {
+      if ((found = strcmp (parsed_host, search_host) == 0))
+        break;
+
+      search_host = va_arg (args, const gchar *);
+      index++;
     }
-    search_host = va_arg (args, const gchar *);
+    va_end (args);
   }
-  va_end (args);
 
   if (match)
-    *match = found ? iter_count : 0;
+    *match = found ? index : -1;
+
+  return found;
+}
+
+gboolean
+gtuber_utils_common_uri_matches_hosts_array (GUri *uri, gint *match, const gchar *const *hosts)
+{
+  guint index = 0;
+  gboolean found = FALSE;
+  const gchar *host;
+
+  host = g_uri_get_host (uri);
+  if (host) {
+    const gchar *parsed_host;
+
+    parsed_host = get_parsed_host (host);
+
+    for (index = 0; hosts[index]; index++) {
+      if ((found = strcmp (parsed_host, hosts[index]) == 0))
+        break;
+    }
+  }
+
+  if (match)
+    *match = found ? index : -1;
 
   return found;
 }
@@ -88,10 +124,10 @@ gtuber_utils_common_uri_matches_hosts (GUri *uri, guint *match, const gchar *sea
  * Returns: (transfer full): the extracted ID or %NULL.
  */
 gchar *
-gtuber_utils_common_obtain_uri_id_from_paths (GUri *uri, guint *match, const gchar *search_path, ...)
+gtuber_utils_common_obtain_uri_id_from_paths (GUri *uri, gint *match, const gchar *search_path, ...)
 {
   va_list args;
-  guint iter_count = 0;
+  guint index = -1;
   gchar *video_id = NULL;
   gchar **path_parts;
   const gchar *path = g_uri_get_path (uri);
@@ -104,7 +140,7 @@ gtuber_utils_common_obtain_uri_id_from_paths (GUri *uri, guint *match, const gch
     gchar **search_parts;
     guint i = 0;
 
-    iter_count++;
+    index++;
     search_parts = g_strsplit (search_path, "/", 0);
 
     while (path_parts[i] && search_parts[i]) {
@@ -126,7 +162,7 @@ gtuber_utils_common_obtain_uri_id_from_paths (GUri *uri, guint *match, const gch
   g_debug ("Identified ID: %s", video_id);
 
   if (match)
-    *match = video_id ? iter_count : 0;
+    *match = video_id ? index : -1;
 
   return video_id;
 }
@@ -190,6 +226,53 @@ gtuber_utils_common_obtain_uri_with_query_as_path (const gchar *uri_str)
   g_free (mod_path);
 
   return mod_uri;
+}
+
+gchar *
+gtuber_utils_common_obtain_uri_source (GUri *uri)
+{
+  gchar *uri_str, *source;
+
+  uri_str = g_uri_to_string_partial (uri, G_URI_HIDE_QUERY | G_URI_HIDE_FRAGMENT);
+  source = g_uri_resolve_relative (uri_str, "/", G_URI_FLAGS_ENCODED, NULL);
+
+  g_free (uri_str);
+
+  return source;
+}
+
+gchar *
+gtuber_utils_common_replace_uri_source (const gchar *uri_str, const gchar *src_uri_str)
+{
+  GUri *uri, *src_uri, *mod_uri;
+  gchar *mod_uri_str;
+
+  uri = g_uri_parse (uri_str, G_URI_FLAGS_ENCODED, NULL);
+  if (!uri)
+    return NULL;
+
+  src_uri = g_uri_parse (src_uri_str, G_URI_FLAGS_ENCODED, NULL);
+  if (!src_uri) {
+    g_uri_unref (uri);
+    return NULL;
+  }
+
+  mod_uri = g_uri_build (G_URI_FLAGS_ENCODED,
+      g_uri_get_scheme (src_uri),
+      g_uri_get_userinfo (src_uri),
+      g_uri_get_host (src_uri),
+      g_uri_get_port (src_uri),
+      g_uri_get_path (uri),
+      g_uri_get_query (uri),
+      g_uri_get_fragment (uri));
+
+  mod_uri_str = g_uri_to_string (mod_uri);
+
+  g_uri_unref (uri);
+  g_uri_unref (src_uri);
+  g_uri_unref (mod_uri);
+
+  return mod_uri_str;
 }
 
 /**

@@ -17,15 +17,25 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#pragma once
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
-#include "gtuber/gtuber-plugin-devel.h"
+#include "gstgtuberelement.h"
 
-G_BEGIN_DECLS
+static gboolean
+plugin_init (GstPlugin *plugin)
+{
+  gboolean res = FALSE;
 
-#define GTUBER_TYPE_YOUTUBE (gtuber_youtube_get_type ())
-G_DECLARE_FINAL_TYPE (GtuberYoutube, gtuber_youtube, GTUBER, YOUTUBE, GtuberWebsite)
+  res |= GST_ELEMENT_REGISTER (gtubersrc, plugin);
+  res |= GST_ELEMENT_REGISTER (gtuberuridemux, plugin);
+  res |= GST_ELEMENT_REGISTER (gtuberdashdemux, plugin);
+  res |= GST_ELEMENT_REGISTER (gtuberhlsdemux, plugin);
 
-G_MODULE_EXPORT GtuberWebsite *query_plugin (GUri *uri);
+  return res;
+}
 
-G_END_DECLS
+GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR,
+    gtuber, "Gtuber elements", plugin_init, VERSION, "LGPL",
+    GST_PACKAGE_NAME, GST_PACKAGE_ORIGIN)

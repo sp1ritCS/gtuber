@@ -17,11 +17,23 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#include <gtuber/gtuber-plugin-devel.h>
 #include <json-glib/json-glib.h>
 
-#include "gtuber-youtube.h"
 #include "utils/common/gtuber-utils-common.h"
 #include "utils/json/gtuber-utils-json.h"
+#include "utils/youtube/gtuber-utils-youtube.h"
+
+#include "gtuber/gtuber-soup-compat.h"
+
+#define GTUBER_YOUTUBE_CLI_VERSION "16.37.36"
+
+GTUBER_WEBSITE_PLUGIN_EXPORT_HOSTS (
+  "youtube.com",
+  "youtu.be",
+  NULL
+)
+GTUBER_WEBSITE_PLUGIN_DECLARE (Youtube, youtube, YOUTUBE)
 
 struct _GtuberYoutube
 {
@@ -31,49 +43,27 @@ struct _GtuberYoutube
   gchar *hls_uri;
 
   gchar *visitor_data;
-  gchar *client_version;
   gchar *locale;
 
   guint try_count;
 };
 
-struct _GtuberYoutubeClass
-{
-  GtuberWebsiteClass parent_class;
-};
-
 #define parent_class gtuber_youtube_parent_class
-G_DEFINE_TYPE (GtuberYoutube, gtuber_youtube, GTUBER_TYPE_WEBSITE)
+GTUBER_WEBSITE_PLUGIN_DEFINE (Youtube, youtube)
 
 static void gtuber_youtube_finalize (GObject *object);
 
+static void gtuber_youtube_prepare (GtuberWebsite *website);
 static GtuberFlow gtuber_youtube_create_request (GtuberWebsite *website,
     GtuberMediaInfo *info, SoupMessage **msg, GError **error);
 static GtuberFlow gtuber_youtube_parse_input_stream (GtuberWebsite *website,
     GInputStream *stream, GtuberMediaInfo *info, GError **error);
+static GtuberFlow gtuber_youtube_set_user_req_headers (GtuberWebsite *website,
+    SoupMessageHeaders *req_headers, GHashTable *user_headers, GError **error);
 
 static void
 gtuber_youtube_init (GtuberYoutube *self)
 {
-  const gchar * const *langs;
-
-  self->try_count = 0;
-  self->hls_uri = NULL;
-
-  /* FIXME: get from cache */
-  self->visitor_data = g_strdup ("");
-  self->client_version = g_strdup ("16.37.36");
-
-  langs = g_get_language_names ();
-  while (*langs) {
-    if (strlen (*langs) == 5 && g_str_has_prefix (*langs + 2, "_")) {
-      self->locale = g_strdup (*langs);
-      break;
-    }
-    langs++;
-  }
-  if (!self->locale)
-    self->locale = g_strdup ("en_US");
 }
 
 static void
@@ -85,8 +75,10 @@ gtuber_youtube_class_init (GtuberYoutubeClass *klass)
   gobject_class->finalize = gtuber_youtube_finalize;
 
   website_class->handles_input_stream = TRUE;
+  website_class->prepare = gtuber_youtube_prepare;
   website_class->create_request = gtuber_youtube_create_request;
   website_class->parse_input_stream = gtuber_youtube_parse_input_stream;
+  website_class->set_user_req_headers = gtuber_youtube_set_user_req_headers;
 }
 
 static void
@@ -100,7 +92,6 @@ gtuber_youtube_finalize (GObject *object)
   g_free (self->hls_uri);
 
   g_free (self->visitor_data);
-  g_free (self->client_version);
   g_free (self->locale);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
@@ -130,52 +121,16 @@ _read_stream_info (JsonReader *reader, GtuberStream *stream)
 
   /* Parse mime type and codecs */
   if ((yt_mime = gtuber_utils_json_get_string (reader, "mimeType", NULL))) {
-    gchar **strv;
+    GtuberStreamMimeType mime_type = GTUBER_STREAM_MIME_TYPE_UNKNOWN;
+    gchar *vcodec = NULL;
+    gchar *acodec = NULL;
 
-    strv = g_strsplit (yt_mime, ";", 2);
-    if (strv[1]) {
-      GHashTable *params;
-      gchar *codecs = NULL;
+    gtuber_utils_youtube_parse_mime_type_string (yt_mime, &mime_type, &vcodec, &acodec);
+    gtuber_stream_set_mime_type (stream, mime_type);
+    gtuber_stream_set_codecs (stream, vcodec, acodec);
 
-      g_strstrip (strv[1]);
-      params = g_uri_parse_params (strv[1], -1, ";", G_URI_PARAMS_WWW_FORM, NULL);
-
-      if (params) {
-        codecs = g_strdup (g_hash_table_lookup (params, "codecs"));
-        g_hash_table_unref (params);
-      }
-
-      if (codecs) {
-        GtuberStreamMimeType mime_type;
-
-        mime_type = gtuber_utils_common_get_mime_type_from_string (strv[0]);
-        gtuber_stream_set_mime_type (stream, mime_type);
-
-        g_strstrip (g_strdelimit (codecs, "\"", ' '));
-
-        switch (mime_type) {
-          case GTUBER_STREAM_MIME_TYPE_AUDIO_MP4:
-          case GTUBER_STREAM_MIME_TYPE_AUDIO_WEBM:
-            /* codecs contain only one (audio) codec */
-            gtuber_stream_set_audio_codec (stream, codecs);
-            break;
-          default:{
-            gchar **cstrv;
-
-            cstrv = g_strsplit (codecs, ",", 2);
-            if (g_strv_length (cstrv) > 1)
-              g_strstrip (cstrv[1]);
-
-            gtuber_stream_set_codecs (stream, cstrv[0], cstrv[1]);
-
-            g_strfreev (cstrv);
-            break;
-          }
-        }
-        g_free (codecs);
-      }
-    }
-    g_strfreev (strv);
+    g_free (vcodec);
+    g_free (acodec);
   }
 }
 
@@ -205,6 +160,15 @@ static void
 _read_adaptive_stream_cb (JsonReader *reader, GtuberMediaInfo *info, gpointer user_data)
 {
   GtuberAdaptiveStream *astream;
+  const gchar *stream_type;
+
+  stream_type = gtuber_utils_json_get_string (reader, "type", NULL);
+
+  if (!g_strcmp0 (stream_type, "FORMAT_STREAM_TYPE_OTF")) {
+    /* FIXME: OTF requires fetching init at "/sq/0" first
+     * then remaining fragments by number instead of range */
+    return;
+  }
 
   astream = gtuber_adaptive_stream_new ();
   _read_stream_info (reader, GTUBER_STREAM (astream));
@@ -280,10 +244,10 @@ _update_hls_stream_cb (GtuberAdaptiveStream *astream, gpointer user_data)
 static void
 update_info_hls (GtuberMediaInfo *info)
 {
-  const GPtrArray *astreams;
+  GPtrArray *astreams;
 
   astreams = gtuber_media_info_get_adaptive_streams (info);
-  g_ptr_array_foreach ((GPtrArray *) astreams, (GFunc) _update_hls_stream_cb, NULL);
+  g_ptr_array_foreach (astreams, (GFunc) _update_hls_stream_cb, NULL);
 }
 
 static GtuberFlow
@@ -319,6 +283,7 @@ parse_response_data (GtuberYoutube *self, JsonParser *parser,
 
     desc = gtuber_utils_json_get_string (reader, "shortDescription", NULL);
     gtuber_media_info_set_description (info, desc);
+    gtuber_utils_youtube_insert_chapters_from_description (info, desc);
 
     duration = gtuber_utils_json_get_string (reader, "lengthSeconds", NULL);
     if (duration)
@@ -351,7 +316,7 @@ parse_response_data (GtuberYoutube *self, JsonParser *parser,
     self->visitor_data = g_strdup (visitor_data);
     g_debug ("Updated visitor_data: %s", self->visitor_data);
 
-    /* TODO: Update cache */
+    gtuber_youtube_cache_write ("visitor_data", self->visitor_data, 24 * 3600);
   }
 
 finish:
@@ -395,12 +360,36 @@ obtain_player_req_body (GtuberYoutube *self, GtuberMediaInfo *info)
   "  },\n"
   "  \"video_id\": \"%s\"\n"
   "}",
-      self->client_version, cliScreen, parts[0], parts[1],
+      GTUBER_YOUTUBE_CLI_VERSION, cliScreen, parts[0], parts[1],
       self->visitor_data, self->video_id, self->video_id);
 
   g_strfreev (parts);
 
   return req_body;
+}
+
+static void
+gtuber_youtube_prepare (GtuberWebsite *website)
+{
+  GtuberYoutube *self = GTUBER_YOUTUBE (website);
+  const gchar *const *langs;
+  guint i;
+
+  self->visitor_data = gtuber_youtube_cache_read ("visitor_data");
+  if (!self->visitor_data)
+    self->visitor_data = g_strdup ("");
+
+  langs = g_get_language_names ();
+  for (i = 0; langs[i]; i++) {
+    if (strlen (langs[i]) == 5 && ((langs[i])[2] == '_')) {
+      self->locale = g_strdup (langs[i]);
+      break;
+    }
+  }
+  if (!self->locale)
+    self->locale = g_strdup ("en_US");
+
+  g_debug ("Using locale: %s", self->locale);
 }
 
 static GtuberFlow
@@ -429,7 +418,7 @@ gtuber_youtube_create_request (GtuberWebsite *website,
 
   ua = g_strdup_printf (
       "com.google.android.youtube/%s(Linux; U; Android 11; en_US) gzip",
-      self->client_version);
+      GTUBER_YOUTUBE_CLI_VERSION);
   soup_message_headers_replace (headers, "User-Agent", ua);
   soup_message_headers_append (headers, "X-Goog-Api-Format-Version", "2");
   soup_message_headers_append (headers, "X-Goog-Visitor-Id", self->visitor_data);
@@ -473,30 +462,41 @@ finish:
   return flow;
 }
 
-GtuberWebsite *
-query_plugin (GUri *uri)
+static GtuberFlow
+gtuber_youtube_set_user_req_headers (GtuberWebsite *website,
+    SoupMessageHeaders *req_headers, GHashTable *user_headers, GError **error)
 {
-  guint uri_match;
+  GtuberYoutube *self = GTUBER_YOUTUBE (website);
+
+  /* Update visitor ID header */
+  soup_message_headers_replace (req_headers, "X-Goog-Visitor-Id", self->visitor_data);
+
+  return GTUBER_WEBSITE_CLASS (parent_class)->set_user_req_headers (website,
+      req_headers, user_headers, error);
+}
+
+GtuberWebsite *
+plugin_query (GUri *uri)
+{
   gchar *id;
+  gboolean matched;
 
-  if (!gtuber_utils_common_uri_matches_hosts (uri, &uri_match,
-      "youtube.com",
-      "m.youtube.com",
-      "youtu.be",
-      NULL))
-    return NULL;
+  matched = gtuber_utils_common_uri_matches_hosts (uri, NULL,
+      "youtu.be", NULL);
 
-  id = (uri_match == 3)
+  id = (matched)
       ? gtuber_utils_common_obtain_uri_id_from_paths (uri, NULL, "/", NULL)
       : gtuber_utils_common_obtain_uri_query_value (uri, "v");
 
-  if (!id)
-    id = gtuber_utils_common_obtain_uri_id_from_paths (uri, NULL, "/v/", NULL);
+  if (!id) {
+    id = gtuber_utils_common_obtain_uri_id_from_paths (uri, NULL,
+        "/v/", "/embed/", NULL);
+  }
 
   if (id) {
     GtuberYoutube *youtube;
 
-    youtube = g_object_new (GTUBER_TYPE_YOUTUBE, NULL);
+    youtube = gtuber_youtube_new ();
     youtube->video_id = id;
 
     g_debug ("Requested video: %s", youtube->video_id);

@@ -1,7 +1,7 @@
 project('gtuber', 'c',
-  version: '0.0.1',
+  version: '0.2.0',
   meson_version: '>=0.58.0',
-  license: 'LGPLv2.1+',
+  license: 'LGPL-2.1-or-later',
   default_options: [
     'warning_level=1',
     'buildtype=debugoptimized',
@@ -19,7 +19,6 @@ datadir = get_option('datadir')
 libdir = get_option('libdir')
 includedir = get_option('includedir')
 
-cdata = configuration_data()
 cc = meson.get_compiler('c')
 
 add_global_arguments(
@@ -32,13 +31,14 @@ version_array = gtuber_version.split('.')
 gtuber_version_suffix = '-' + version_array[0] + '.0'
 
 gtuber_api_name = meson.project_name() + gtuber_version_suffix
+gtuber_plugin_devel_api_name = '@0@-plugin-devel@1@'.format(
+  meson.project_name(), gtuber_version_suffix
+)
 
 gtuber_utils_prefix = meson.project_name() + '-utils-'
 gtuber_plugin_prefix = meson.project_name() + '-'
 
 gtuber_plugins_libdir = join_paths(prefix, libdir, gtuber_api_name)
-
-cdata.set('GTUBER_PLUGIN_PATH', '"@0@"'.format(gtuber_plugins_libdir))
 
 warning_flags = [
   '-Wmissing-declarations',
@@ -63,6 +63,19 @@ foreach extra_arg : warning_flags
   endif
 endforeach
 
+cdata = configuration_data()
+
+cdata.set('PACKAGE', '"@0@"'.format(meson.project_name()))
+cdata.set('VERSION', '"@0@"'.format(meson.project_version()))
+cdata.set('PACKAGE_VERSION', '"@0@"'.format(meson.project_version()))
+
+cdata.set('GTUBER_API_NAME', '"@0@"'.format(gtuber_api_name))
+cdata.set('GTUBER_PLUGIN_PATH', '"@0@"'.format(gtuber_plugins_libdir))
+
+cdata.set('GST_PACKAGE_NAME', '"gst-gtuber"')
+cdata.set('GST_PACKAGE_ORIGIN', '"Unknown package origin"')
+cdata.set('GST_LICENSE', '"LGPL"')
+
 configure_file(
   output: 'config.h',
   configuration: cdata,
@@ -84,6 +97,9 @@ subdir('doc')
 summary('doc', build_doc, section: 'Build')
 
 subdir('utils')
-subdir('plugins')
+subdir('gst')
 
+subdir('plugins')
 subdir('bindings')
+
+subdir('tests')

@@ -17,14 +17,20 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include <json-glib/json-glib.h>
-
 #include "gtuber-bilibili.h"
 #include "utils/common/gtuber-utils-common.h"
 #include "utils/json/gtuber-utils-json.h"
 
+#include "gtuber/gtuber-soup-compat.h"
+
+/* FIXME: Support "live.bilibili.com" streams */
+GTUBER_WEBSITE_PLUGIN_EXPORT_HOSTS (
+  "bilibili.com",
+  "b23.tv",
+  NULL
+)
 #define parent_class gtuber_bilibili_parent_class
-G_DEFINE_TYPE (GtuberBilibili, gtuber_bilibili, GTUBER_TYPE_WEBSITE)
+GTUBER_WEBSITE_PLUGIN_DEFINE (Bilibili, bilibili)
 
 static void gtuber_bilibili_finalize (GObject *object);
 
@@ -61,6 +67,17 @@ gtuber_bilibili_finalize (GObject *object)
   g_free (self->bvid);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
+void bilibili_set_media_info_id_from_cid (GtuberBilibili *self, GtuberMediaInfo *info)
+{
+  gchar *id;
+
+  id = g_strdup_printf ("%i", self->cid);
+  gtuber_media_info_set_id (info, id);
+  g_debug ("Video ID: %s", id);
+
+  g_free (id);
 }
 
 static const gchar *
@@ -309,17 +326,10 @@ bilibili_get_flow_from_plugin_props (GtuberBilibili *self, GError **error)
 }
 
 GtuberWebsite *
-query_plugin (GUri *uri)
+plugin_query (GUri *uri)
 {
   GtuberBilibili *bilibili = NULL;
   gchar *id;
-
-  /* FIXME: Support "live.bilibili.com" streams */
-  if (!gtuber_utils_common_uri_matches_hosts (uri, NULL,
-      "bilibili.com",
-      "b23.tv",
-      NULL))
-    return NULL;
 
   if ((id = gtuber_utils_common_obtain_uri_id_from_paths (uri, NULL,
       "/bangumi/play/",
@@ -339,7 +349,7 @@ query_plugin (GUri *uri)
       : BILIBILI_UNKNOWN;
 
     if (bili_type != BILIBILI_UNKNOWN) {
-      bilibili = g_object_new (GTUBER_TYPE_BILIBILI, NULL);
+      bilibili = gtuber_bilibili_new ();
       bilibili->bili_type = bili_type;
       bilibili->video_id = g_strdup (id + 2);
 

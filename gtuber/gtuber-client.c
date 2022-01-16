@@ -37,9 +37,6 @@
 struct _GtuberClient
 {
   GObject parent;
-
-  /* Private */
-  gchar *module_name;
 };
 
 struct _GtuberClientClass
@@ -56,7 +53,6 @@ static void gtuber_client_finalize (GObject *object);
 static void
 gtuber_client_init (GtuberClient *self)
 {
-  self->module_name = NULL;
 }
 
 static void
@@ -70,11 +66,7 @@ gtuber_client_class_init (GtuberClientClass *klass)
 static void
 gtuber_client_finalize (GObject *object)
 {
-  GtuberClient *self = GTUBER_CLIENT (object);
-
   g_debug ("Client finalize");
-
-  g_free (self->module_name);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -108,7 +100,7 @@ static void
 gtuber_client_verify_media_info (GtuberClient *self,
     GtuberMediaInfo *info, GError **error)
 {
-  const GPtrArray *streams, *adaptive_streams;
+  GPtrArray *streams, *adaptive_streams;
 
   streams = gtuber_media_info_get_streams (info);
   if (streams && streams->len)
@@ -172,33 +164,11 @@ gtuber_client_fetch_media_info (GtuberClient *self, const gchar *uri,
   g_debug ("Requested URI: %s", uri);
 
   guri = g_uri_parse (uri, G_URI_FLAGS_ENCODED, &my_error);
-  if (!guri) {
-    gchar *yt_uri;
+  if (!guri)
+    goto error;
 
-    if (strlen (uri) != 11)
-      goto error;
-
-    if (my_error) {
-      g_error_free (my_error);
-      my_error = NULL;
-    }
-
-    /* Exclusively assume YT video ID for non-uri 11 characters */
-    yt_uri = g_strjoin (NULL, "https://www.youtube.com/watch?v=", uri, NULL);
-    guri = g_uri_parse (yt_uri, G_URI_FLAGS_ENCODED, &my_error);
-    g_free (yt_uri);
-
-    if (!guri)
-      goto error;
-  }
-
-  if (self->module_name) {
-    g_debug ("Trying to use last module again");
-    website = gtuber_loader_get_website_from_module_name (self->module_name, guri, &module);
-  }
-
-  if (!website)
-    website = gtuber_loader_get_website_for_uri (guri, &module);
+  website = gtuber_loader_get_website_for_uri (guri, &module);
+  g_uri_unref (guri);
 
   if (!website) {
     g_debug ("No plugin for URI: %s", uri);
@@ -211,11 +181,12 @@ gtuber_client_fetch_media_info (GtuberClient *self, const gchar *uri,
   gtuber_client_configure_website (self, website, uri);
 
   website_class = GTUBER_WEBSITE_GET_CLASS (website);
+  website_class->prepare (website);
+
   info = g_object_new (GTUBER_TYPE_MEDIA_INFO, NULL);
 
   session = soup_session_new_with_options (
       "timeout", 7,
-      "max_conns_per_host", 1,
       NULL);
 
 beginning:
@@ -234,10 +205,18 @@ beginning:
   g_debug ("Sending request...");
   stream = soup_session_send (session, msg, cancellable, &my_error);
 
+  if (!my_error) {
+    g_debug ("Reading response...");
+    flow = website_class->read_response (website, msg, &my_error);
+
+    if (flow != GTUBER_FLOW_OK)
+      goto decide_flow;
+  }
+
   if (my_error) {
     flow = GTUBER_FLOW_ERROR;
   } else if (website_class->handles_input_stream) {
-    g_debug ("Parsing response as input stream...");
+    g_debug ("Parsing response input stream...");
     flow = website_class->parse_input_stream (website, stream, info, &my_error);
   } else {
     GOutputStream *ostream;
@@ -248,13 +227,13 @@ beginning:
         G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE | G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET,
         cancellable, &my_error) != -1) {
       data = g_memory_output_stream_steal_data (G_MEMORY_OUTPUT_STREAM (ostream));
-      g_debug ("Parsing response as data...");
+      g_debug ("Parsing response data...");
     }
     g_object_unref (ostream);
 
     flow = (my_error != NULL)
         ? GTUBER_FLOW_ERROR
-        : website_class->parse_response (website, data, info, &my_error);
+        : website_class->parse_data (website, data, info, &my_error);
 
     g_free (data);
   }
@@ -272,22 +251,29 @@ beginning:
 
   g_debug ("Parsed response");
 
+  if (!my_error) {
+    SoupMessageHeaders *req_headers;
+    GHashTable *user_headers;
+
+    req_headers = soup_message_get_request_headers (msg);
+    user_headers = gtuber_media_info_get_request_headers (info);
+
+    g_debug ("Setting user request headers...");
+    flow = website_class->set_user_req_headers (website, req_headers,
+        user_headers, &my_error);
+  }
+  if (flow != GTUBER_FLOW_OK)
+    goto decide_flow;
+
 error:
-  if (guri)
-    g_uri_unref (guri);
   if (msg)
     g_object_unref (msg);
   if (session)
     g_object_unref (session);
   if (website)
     g_object_unref (website);
-  if (module) {
-    g_free (self->module_name);
-    self->module_name = g_strdup (g_module_name (module));
-
-    g_module_close (module);
-    g_debug ("Closed plugin module");
-  }
+  if (module)
+    gtuber_loader_close_module (module);
 
 invalid_info:
   if (my_error) {

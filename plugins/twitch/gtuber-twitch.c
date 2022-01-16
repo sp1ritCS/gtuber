@@ -17,11 +17,13 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#include <gtuber/gtuber-plugin-devel.h>
 #include <json-glib/json-glib.h>
 
-#include "gtuber-twitch.h"
 #include "utils/common/gtuber-utils-common.h"
 #include "utils/json/gtuber-utils-json.h"
+
+#include "gtuber/gtuber-soup-compat.h"
 
 typedef enum
 {
@@ -41,6 +43,12 @@ typedef enum
   TWITCH_MEDIA_CLIP,
 } TwitchMediaType;
 
+GTUBER_WEBSITE_PLUGIN_EXPORT_HOSTS (
+  "twitch.tv",
+  NULL
+)
+GTUBER_WEBSITE_PLUGIN_DECLARE (Twitch, twitch, TWITCH)
+
 struct _GtuberTwitch
 {
   GtuberWebsite parent;
@@ -56,13 +64,8 @@ struct _GtuberTwitch
   gboolean download_hls;
 };
 
-struct _GtuberTwitchClass
-{
-  GtuberWebsiteClass parent_class;
-};
-
 #define parent_class gtuber_twitch_parent_class
-G_DEFINE_TYPE (GtuberTwitch, gtuber_twitch, GTUBER_TYPE_WEBSITE)
+GTUBER_WEBSITE_PLUGIN_DEFINE (Twitch, twitch)
 
 static void gtuber_twitch_finalize (GObject *object);
 
@@ -70,6 +73,8 @@ static GtuberFlow gtuber_twitch_create_request (GtuberWebsite *website,
     GtuberMediaInfo *info, SoupMessage **msg, GError **error);
 static GtuberFlow gtuber_twitch_parse_input_stream (GtuberWebsite *website,
     GInputStream *stream, GtuberMediaInfo *info, GError **error);
+static GtuberFlow gtuber_twitch_set_user_req_headers (GtuberWebsite *website,
+    SoupMessageHeaders *req_headers, GHashTable *user_headers, GError **error);
 
 static void
 gtuber_twitch_init (GtuberTwitch *self)
@@ -89,6 +94,7 @@ gtuber_twitch_class_init (GtuberTwitchClass *klass)
   website_class->handles_input_stream = TRUE;
   website_class->create_request = gtuber_twitch_create_request;
   website_class->parse_input_stream = gtuber_twitch_parse_input_stream;
+  website_class->set_user_req_headers = gtuber_twitch_set_user_req_headers;
 }
 
 static void
@@ -125,7 +131,7 @@ _read_clip_stream_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberTwitch *s
   org_uri = gtuber_utils_json_get_string (reader, "sourceURL", NULL);
   if (org_uri) {
     GtuberStream *stream = gtuber_stream_new ();
-    const GPtrArray *streams = gtuber_media_info_get_streams (info);
+    GPtrArray *streams = gtuber_media_info_get_streams (info);
     const gchar *quality;
     gchar *mod_uri, *query;
     guint itag, fps, height = 0;
@@ -184,7 +190,6 @@ static void
 _parse_access_token_data (GtuberTwitch *self, JsonParser *parser,
     GtuberMediaInfo *info, GError **error)
 {
-  //const GtuberCache *cache;
   JsonReader *reader = json_reader_new (json_parser_get_root (parser));
   const gchar *data_type = NULL;
 
@@ -227,12 +232,6 @@ _parse_access_token_data (GtuberTwitch *self, JsonParser *parser,
     _read_clip_streams (self, reader, info, error);
 
   /* TODO: Set show_ads to false in access_token */
-
-  /* TODO: Store to cache
-  cache = gtuber_cache_get ();
-  gtuber_cache_store_value (cache, "access-token", self->access_token);
-  gtuber_cache_store_value (cache, "signature", self->signature);
-  */
 
 finish:
   g_object_unref (reader);
@@ -523,16 +522,6 @@ gtuber_twitch_create_request (GtuberWebsite *website,
 {
   GtuberTwitch *self = GTUBER_TWITCH (website);
 
-  /* TODO: Implement caching
-  if (!self->access_token || !self->signature) {
-    const GtuberCache *cache = gtuber_cache_get ();
-
-    if (!self->access_token)
-      gtuber_cache_restore_value (cache, "access-token", &self->access_token);
-    if (!self->signature)
-      gtuber_cache_restore_value (cache, "signature", &self->signature);
-  }
-  */
   if (!self->access_token || !self->signature) {
     GqlReqType req_type = (self->media_type == TWITCH_MEDIA_CLIP)
       ? GQL_REQ_ACCESS_TOKEN_CLIP
@@ -570,30 +559,36 @@ gtuber_twitch_parse_input_stream (GtuberWebsite *website,
   return parse_json_stream (self, stream, info, error);
 }
 
-GtuberWebsite *
-query_plugin (GUri *uri)
+static GtuberFlow
+gtuber_twitch_set_user_req_headers (GtuberWebsite *website,
+    SoupMessageHeaders *req_headers, GHashTable *user_headers, GError **error)
 {
-  guint match;
-  gchar *id;
+  /* Only used for API */
+  soup_message_headers_remove (req_headers, "Client-ID");
 
-  if (!gtuber_utils_common_uri_matches_hosts (uri, NULL,
-      "twitch.tv",
-      NULL))
-    return NULL;
+  return GTUBER_WEBSITE_CLASS (parent_class)->set_user_req_headers (website,
+      req_headers, user_headers, error);
+}
+
+GtuberWebsite *
+plugin_query (GUri *uri)
+{
+  gint match;
+  gchar *id;
 
   if ((id = gtuber_utils_common_obtain_uri_id_from_paths (uri, &match,
       "/*/clip/",
       "/videos/",
       "/",
       NULL))) {
-    GtuberTwitch *twitch = g_object_new (GTUBER_TYPE_TWITCH, NULL);
+    GtuberTwitch *twitch = gtuber_twitch_new ();
     twitch->video_id = id;
 
     switch (match) {
-      case 1:
+      case 0:
         twitch->media_type = TWITCH_MEDIA_CLIP;
         break;
-      case 2:
+      case 1:
         twitch->media_type = TWITCH_MEDIA_VIDEO;
         break;
       default:

@@ -17,9 +17,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#include <gtuber/gtuber-plugin-devel.h>
 #include <json-glib/json-glib.h>
 
-#include "gtuber-piped.h"
 #include "utils/common/gtuber-utils-common.h"
 #include "utils/json/gtuber-utils-json.h"
 
@@ -30,6 +30,19 @@ typedef enum
   PIPED_MEDIA_AUDIO_STREAM,
 } PipedMediaType;
 
+GTUBER_WEBSITE_PLUGIN_EXPORT_HOSTS (
+  "piped.kavin.rocks",
+  "piped.silkky.cloud",
+  NULL
+)
+static const gchar *piped_apis[] = {
+  "pipedapi.kavin.rocks",
+  "api.piped.silkky.cloud",
+  NULL
+};
+
+GTUBER_WEBSITE_PLUGIN_DECLARE (Piped, piped, PIPED)
+
 struct _GtuberPiped
 {
   GtuberWebsite parent;
@@ -37,16 +50,11 @@ struct _GtuberPiped
   gchar *video_id;
   gchar *hls_uri;
 
-  PipedMediaType media_type;
-};
-
-struct _GtuberPipedClass
-{
-  GtuberWebsiteClass parent_class;
+  gint api_id;
 };
 
 #define parent_class gtuber_piped_parent_class
-G_DEFINE_TYPE (GtuberPiped, gtuber_piped, GTUBER_TYPE_WEBSITE)
+GTUBER_WEBSITE_PLUGIN_DEFINE (Piped, piped)
 
 static void gtuber_piped_finalize (GObject *object);
 
@@ -58,7 +66,6 @@ static GtuberFlow gtuber_piped_parse_input_stream (GtuberWebsite *website,
 static void
 gtuber_piped_init (GtuberPiped *self)
 {
-  self->hls_uri = NULL;
 }
 
 static void
@@ -88,7 +95,8 @@ gtuber_piped_finalize (GObject *object)
 }
 
 static void
-_read_stream_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberPiped *self)
+piped_read_stream (GtuberPiped *self, JsonReader *reader,
+    GtuberMediaInfo *info, PipedMediaType media_type)
 {
   GtuberAdaptiveStream *astream = NULL;
   GtuberStream *stream;
@@ -97,7 +105,7 @@ _read_stream_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberPiped *self)
   const gchar *uri;
   gboolean video_only;
 
-  if (self->media_type == PIPED_MEDIA_VIDEO_STREAM) {
+  if (media_type == PIPED_MEDIA_VIDEO_STREAM) {
     const gchar *format;
 
     format = gtuber_utils_json_get_string (reader, "format", NULL);
@@ -116,7 +124,7 @@ _read_stream_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberPiped *self)
 
   /* Piped API does not say if stream is adaptive or not,
    * assume that "all audio" and "video only" are adaptive */
-  if (self->media_type == PIPED_MEDIA_AUDIO_STREAM || video_only) {
+  if (media_type == PIPED_MEDIA_AUDIO_STREAM || video_only) {
     astream = gtuber_adaptive_stream_new ();
 
     gtuber_adaptive_stream_set_init_range (astream,
@@ -150,7 +158,7 @@ _read_stream_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberPiped *self)
   gtuber_stream_set_uri (stream, uri);
   gtuber_stream_set_bitrate (stream, gtuber_utils_json_get_int (reader, "bitrate", NULL));
 
-  switch (self->media_type) {
+  switch (media_type) {
     case PIPED_MEDIA_VIDEO_STREAM:
       gtuber_stream_set_width (stream, gtuber_utils_json_get_int (reader, "width", NULL));
       gtuber_stream_set_height (stream, gtuber_utils_json_get_int (reader, "height", NULL));
@@ -175,6 +183,30 @@ _read_stream_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberPiped *self)
 }
 
 static void
+_read_video_stream_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberPiped *self)
+{
+  piped_read_stream (self, reader, info, PIPED_MEDIA_VIDEO_STREAM);
+}
+
+static void
+_read_audio_stream_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberPiped *self)
+{
+  piped_read_stream (self, reader, info, PIPED_MEDIA_AUDIO_STREAM);
+}
+
+static void
+_read_chapter_cb (JsonReader *reader, GtuberMediaInfo *info, GtuberPiped *self)
+{
+  const gchar *title;
+  guint64 start;
+
+  title = gtuber_utils_json_get_string (reader, "title", NULL);
+  start = gtuber_utils_json_get_int (reader, "start", NULL);
+
+  gtuber_media_info_insert_chapter (info, start * 1000, title);
+}
+
+static void
 parse_response_data (GtuberPiped *self, JsonParser *parser,
     GtuberMediaInfo *info, GError **error)
 {
@@ -190,15 +222,18 @@ parse_response_data (GtuberPiped *self, JsonParser *parser,
 
   if (!self->hls_uri) {
     if (gtuber_utils_json_go_to (reader, "videoStreams", NULL)) {
-      self->media_type = PIPED_MEDIA_VIDEO_STREAM;
       gtuber_utils_json_array_foreach (reader, info,
-          (GtuberFunc) _read_stream_cb, self);
+          (GtuberFunc) _read_video_stream_cb, self);
       gtuber_utils_json_go_back (reader, 1);
     }
     if (gtuber_utils_json_go_to (reader, "audioStreams", NULL)) {
-      self->media_type = PIPED_MEDIA_AUDIO_STREAM;
       gtuber_utils_json_array_foreach (reader, info,
-          (GtuberFunc) _read_stream_cb, self);
+          (GtuberFunc) _read_audio_stream_cb, self);
+      gtuber_utils_json_go_back (reader, 1);
+    }
+    if (gtuber_utils_json_go_to (reader, "chapters", NULL)) {
+      gtuber_utils_json_array_foreach (reader, info,
+          (GtuberFunc) _read_chapter_cb, self);
       gtuber_utils_json_go_back (reader, 1);
     }
   }
@@ -215,7 +250,8 @@ gtuber_piped_create_request (GtuberWebsite *website,
   if (!self->hls_uri) {
     gchar *uri;
 
-    uri = g_strdup_printf ("https://pipedapi.kavin.rocks/streams/%s", self->video_id);
+    uri = g_strdup_printf ("https://%s/streams/%s",
+        piped_apis[self->api_id], self->video_id);
     *msg = soup_message_new ("GET", uri);
 
     g_free (uri);
@@ -261,15 +297,9 @@ finish:
 }
 
 GtuberWebsite *
-query_plugin (GUri *uri)
+plugin_query (GUri *uri)
 {
-  guint uri_match;
   gchar *id;
-
-  if (!gtuber_utils_common_uri_matches_hosts (uri, &uri_match,
-      "piped.kavin.rocks",
-      NULL))
-    return NULL;
 
   id = gtuber_utils_common_obtain_uri_query_value (uri, "v");
   if (!id)
@@ -278,10 +308,15 @@ query_plugin (GUri *uri)
   if (id) {
     GtuberPiped *piped;
 
-    piped = g_object_new (GTUBER_TYPE_PIPED, NULL);
+    piped = gtuber_piped_new ();
     piped->video_id = id;
 
-    g_debug ("Requested video: %s", piped->video_id);
+    if (G_UNLIKELY (!gtuber_utils_common_uri_matches_hosts_array (uri,
+        &piped->api_id, _hosts_compat)))
+      g_critical ("Plugin query with unmatched host, this should not happen");
+
+    g_debug ("Requested video: %s, API instance: %s",
+        piped->video_id, piped_apis[piped->api_id]);
 
     return GTUBER_WEBSITE (piped);
   }

@@ -20,16 +20,16 @@
 #ifndef __GTUBER_PLUGIN_DEVEL_H__
 #define __GTUBER_PLUGIN_DEVEL_H__
 
-#define __GTUBER_PLUGIN_DEVEL_INSIDE__
-
 #include <gtuber/gtuber.h>
+
+#define __GTUBER_INSIDE__
+
 #include <gtuber/gtuber-website.h>
+#include <gtuber/gtuber-cache.h>
 #include <gtuber/gtuber-stream-devel.h>
 #include <gtuber/gtuber-adaptive-stream-devel.h>
 #include <gtuber/gtuber-media-info-devel.h>
 
-#include <gtuber/gtuber-soup-compat.h>
-
-#undef __GTUBER_PLUGIN_DEVEL_INSIDE__
+#undef __GTUBER_INSIDE__
 
 #endif /* __GTUBER_PLUGIN_DEVEL_H__ */
