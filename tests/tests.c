@@ -1,5 +1,4 @@
 #include "tests.h"
-#include "gtuber/gtuber-soup-compat.h"
 
 typedef struct
 {
@@ -41,6 +40,9 @@ compare_fetch (GtuberClient *client, const gchar *uri,
   GError *error = NULL;
 
   fetch = gtuber_client_fetch_media_info (client, uri, NULL, &error);
+
+  if (error)
+    g_printerr ("Fetch media info error: %s\n", error->message);
 
   g_assert_null (error);
   g_assert_nonnull (fetch);
